@@ -1,0 +1,1 @@
+SQLALCHEMY_DATABASE_URL="postgresql://postgres.knhkyoautxqxedohwdrp:kairos_utriai@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres"

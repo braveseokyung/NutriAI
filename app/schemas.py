@@ -13,6 +13,13 @@ class NutrientSchema(BaseModel):
     PRDCT_PRICE: int
     MJR_CATEGORY: List[str]  # ARRAY 필드이므로 List로 설정
 
-    class Config:
-        orm_mode = True 
+    # class Config:
+    #     orm_mode = True 
 
+class RESPONSE_1(BaseModel):
+    TYPE:int
+    ANSWER:str
+
+class RESPONSE_2(BaseModel):
+    SYMPTOM:str
+    CATEGORY:str

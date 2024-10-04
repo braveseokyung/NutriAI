@@ -1,13 +1,16 @@
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy.inspection import inspect
+from typing import List, Dict
+import uuid
 import json
-from .schemas import NutrientSchema, RESPONSE_1, RESPONSE_2
+from .schemas import NutrientSchema, RESPONSE_1, RESPONSE_2, UserInput
 from .models import Nutrient
 from openai import OpenAI
+from sqlalchemy import text
+from sqlalchemy import func, any_
 
-
-from . import models, schemas
+from . import models
 from app.database import SessionLocal, engine
 
 from dotenv import load_dotenv
@@ -17,6 +20,7 @@ import os
 load_dotenv()
 
 API_KEY = os.getenv('API_KEY')
+CHAT_MODEL="gpt-4o-2024-08-06"
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -38,38 +42,104 @@ def get_all_data(db: Session = Depends(get_db)):
     data = db.query(Nutrient).all()
     return data
 
-# 처음에 conversation 정의가 필요
-# conversation=[]
-# llm_1_role={"role": "system", "content":"You are a health assistant. You should simply ask the user about their symptoms so that you can narrow their symptoms. If user input needs more specifying, return {1} along with your response. Else, if user input is specified enough, answer {2} and finish conversation.You should answer in Korean"}
-# conversation.append(llm_1_role)
+@app.get("/category/{category}")
+def get_data_by_category(category: str, db: Session = Depends(get_db)):
+    # MJR_CATEGORY 배열에서 category 값이 포함된 행을 필터링
+    results = db.query(Nutrient).filter(
+        category == any_(Nutrient.MJR_CATEGORY)  # any_() 사용
+    ).all()
+    
+    return results
 
-# 1이 return 될 때는 계속, 2가 return 되면 stop
+# 대화 상태를 저장하는 딕셔너리 (실제 운영 환경에서는 데이터베이스 사용 권장)
+conversations: Dict[str, List[Dict[str, str]]] = {}
+
+@app.post("/conversation/{conversation_id}")
+def conversation(user_prompt: UserInput, conversation_id: str = None):
+    if conversation_id is None or conversation_id not in conversations:
+        # 새로운 대화 시작
+        conversation_id = str(uuid.uuid4())
+        conversation = []
+
+        # 시스템 메시지 추가
+        conversation_system = {
+            "role": "system",
+            "content": "You are a health assistant. You should simply ask the user about their symptoms so that you can narrow their symptoms. If user input needs more specifying, return {1} along with your response. Else, if user input is specified enough, answer {2} and finish conversation. You should answer in Korean."
+        }
+        conversation.append(conversation_system)
+    else:
+        # 기존 대화 이어나가기
+        conversation = conversations[conversation_id]
+
+    # 사용자 메시지 추가
+    conversation.append({"role": "user", "content": user_prompt.message})
+
+    # 대화 처리 및 응답 생성
+    user_input_type, answer = chatbot_ask_symptom(user_prompt.message, conversation_id)
+
+    # 어시스턴트 응답 추가
+    # conversation.append({"role": "assistant", "content": answer})
+
+    # 대화 상태 저장
+    conversations[conversation_id] = conversation
+
+    # 대화 종료 여부 확인
+    if user_input_type == 2:
+        symptom, category = summarize_and_categorize(conversation_id)
+        
+        # 대화 종료: 상태에서 제거
+        del conversations[conversation_id]
+        
+        data_category=get_data_by_category(category)
+        symptom,info=compare_and_recommend(symptom,data_category)
+
+        return {
+            "symptom": symptom,
+            "info": info
+        }
+
+
+    return {
+        "conversation_id": conversation_id,
+        "user_input_type":user_input_type,
+        "response": answer
+    }
+
+
 @app.get("/chat")
-def chatbot_ask_symptom(prompt, conversation):
-
-    conversation.append({"role": "user", "content": prompt})
+def chatbot_ask_symptom(user_prompt, conversation_id):
 
     client=OpenAI(api_key=API_KEY)
-    CHAT_MODEL="gpt-4o-2024-08-06"
-    
+    conversation=conversations[conversation_id]
+
+    conversation.append({"role": "user", "content": user_prompt})
+
     response = client.beta.chat.completions.parse(
         model=CHAT_MODEL,
         messages=conversation,
         response_format=RESPONSE_1
     )
-    
-    response=response.choices[0].message.content
-    json_response=json.loads(response)
-    user_input_type=json_response['TYPE']
-    answer=json_response['ANSWER']
 
-    return user_input_type,answer
+    response_content = response.choices[0].message.content
+    
+    try:
+        json_response = json.loads(response_content)
+        user_input_type = json_response['TYPE']
+        answer = json_response['ANSWER']
+    except json.JSONDecodeError:
+        user_input_type = 2  # 기본값으로 종료
+        answer = response_content
+
+    return user_input_type, answer
+
 
 @app.get("/summarize")
-def summarize_and_categorize(conversation):
+def summarize_and_categorize(conversation_id):
 
     CATEGORIES=['인지기능/기억력', '긴장', '수면의 질', '피로', '치아', '눈', '피부', '간', '위', '장', '체지방', '칼슘흡수', '혈당', '갱년기 여성', '갱년기 남성', '월경 전 불편한 상태', '혈중 중성지방', '콜레스테롤', '혈압', '혈행', '면역', '항산화', '관절', '뼈', '근력', '운동수행능력', '전립선', '배뇨', '요로']
     llm_2_role={"role": "system", "content":f"Summarize the symptoms in one line. Also categorize the symptom. The category must belong in {', '.join(CATEGORIES)}"}
+    conversation=conversations[conversation_id]
+    
     conversation.append(llm_2_role)
     
     client=OpenAI(api_key=API_KEY)
@@ -88,6 +158,8 @@ def summarize_and_categorize(conversation):
     category=json_response['CATEGORY']
 
     return symptom, category   
+
+# category -> db에서 카테고리에 해당하는 로우를 다 가져옴
 
 @app.get("/recommend")
 def compare_and_recommend(symptom, data_category):
@@ -108,42 +180,6 @@ def compare_and_recommend(symptom, data_category):
 
     return response 
 
-# def get_category_dat
-
-# def stop_or_continue():
-
-
-# # ChatGPT API를 호출하는 함수
-# def get_chatgpt_response(prompt: str) -> str:
-#     completion = openai.chat.completions.create(
-#         model="gpt-4o",  # 사용할 모델 이름
-#         messages=[
-#             {"role": "system", "content": "You are a helpful assistant."},
-#             {"role": "user", "content": prompt}
-#         ]
-#     )
-#     return completion.choices[0].message.content
-
-# # FastAPI 라우트 - DB에서 데이터를 가져와 ChatGPT API를 호출하는 함수
-# @app.get("/nutrient-info/{nutrient_id}")
-# def get_nutrient_info(nutrient_id: int, db: Session = Depends(get_db)):
-#     # 데이터베이스에서 Nutrient 데이터 가져오기
-#     nutrient = db.query(Nutrient).filter(Nutrient.id == nutrient_id).first()
-
-#     if nutrient is None:
-#         return {"error": "Nutrient not found"}
-
-#     # ChatGPT API에 전달할 프롬프트 작성
-#     prompt = f"Tell me about the nutrient '{nutrient.NUT_NM}'. It has the following functionality: {nutrient.NUT_FNCLTY}. Also, here is a product related to it: {nutrient.PRDCT_TITLE}. What are the benefits of this nutrient?"
-
-#     # ChatGPT API 호출
-#     chatgpt_response = get_chatgpt_response(prompt)
-
-#     # 응답 반환
-#     return {
-#         "nutrient": NutrientSchema.from_orm(nutrient),
-#         "chatgpt_response": chatgpt_response
-#     }
 
 @app.get("/")
 def hello():

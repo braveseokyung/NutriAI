@@ -1,6 +1,7 @@
 # database
 from pydantic import BaseModel
 from typing import List
+from uuid import UUID
 
 
 class NutrientSchema(BaseModel):
@@ -16,6 +17,13 @@ class NutrientSchema(BaseModel):
     class Config:
         from_attributes = True 
 
+class ConversationSchema(BaseModel):
+    user_id : UUID
+    conversation: List[str]
+
+    class Config:
+        arbitrary_types_allowed=True
+
 class RESPONSE_1(BaseModel):
     TYPE:int
     ANSWER:str
@@ -23,6 +31,10 @@ class RESPONSE_1(BaseModel):
 class RESPONSE_2(BaseModel):
     SYMPTOM:str
     CATEGORY:str
+
+class RESPONSE_3(BaseModel):
+    SYMPTOM:str
+    INFO:str
 
 class UserInput(BaseModel):
     message: str

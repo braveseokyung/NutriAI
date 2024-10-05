@@ -1,7 +1,7 @@
 # pydantic
 
 from pydantic import BaseModel 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, VARCHAR, TEXT, ARRAY
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, VARCHAR, TEXT, ARRAY, UUID, JSON
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -17,3 +17,7 @@ class Nutrient(Base):
     PRDCT_PRICE = Column(TEXT, unique=False, index=False)
     MJR_CATEGORY = Column(ARRAY(String), unique=False, index=False)
 
+class Conversation(Base):
+    __tablename__="conversation"
+    user_id=Column(UUID, primary_key=True, index=True)
+    conversation=Column(ARRAY(JSON), unique=False, index=False)

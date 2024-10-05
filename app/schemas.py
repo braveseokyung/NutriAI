@@ -34,7 +34,12 @@ class RESPONSE_2(BaseModel):
 
 class RESPONSE_3(BaseModel):
     SYMPTOM:str
-    INFO:str
+    INFO_NUT_NM:str
+    INFO_NUT_FNCLTY:str
+    INFO_PRDCT_TITLE:str
+    INFO_PRDCT_LINK:str
+    INFO_PRDCT_IMAGE:str
+    INFO_PRDCT_PRICE:int
 
 class UserInput(BaseModel):
     message: str

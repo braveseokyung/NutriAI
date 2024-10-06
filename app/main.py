@@ -78,7 +78,7 @@ def get_data_by_category(category: str):
 
 # conversation : 가장 메인, 여기서 모든 llm 모델을 사용해서 응답을 return
 @app.post("/conversation")
-def conversation(user_prompt: UserInput , conversation_id: Optional[str] = Query(None)):
+def conversation(user_prompt: UserInput , nickname : str, conversation_id: Optional[str] = Query(None)):
     # conversation id를 입력하지 않거나 conversation table에 id가 없으면
     if conversation_id is None or supabase_client.table("conversation").select("*").eq("id", conversation_id) is None:
         # 새로운 대화 시작 (대화 id 생성)
@@ -88,7 +88,7 @@ def conversation(user_prompt: UserInput , conversation_id: Optional[str] = Query
         # 시스템 메시지 추가
         conversation_system = {
             "role": "system",
-            "content": "You are a health assistant. You should simply ask the user about their symptoms so that you can narrow their symptoms. If user input needs more specifying, return {1} along with your response. Else, if user input is specified enough, answer {2} and finish conversation. You should answer in Korean."
+            "content": "You are a health assistant. Call the user {nickname}. You should simply ask the user about their symptoms so that you can narrow their symptoms. If user input needs more specifying, return {1} along with your response. Else, if user input is specified enough, answer {2} and finish conversation. You should answer in Korean."
         }
 
         conversation.append(conversation_system)
@@ -96,6 +96,7 @@ def conversation(user_prompt: UserInput , conversation_id: Optional[str] = Query
         # 새로운 conversation conversation DB에 추가
         supabase_client.table("conversation").insert({
             "id": conversation_id,
+            "nickname": nickname,
             "conversation": conversation
         }).execute()
         
@@ -112,7 +113,7 @@ def conversation(user_prompt: UserInput , conversation_id: Optional[str] = Query
     user_input_type, answer = chatbot_ask_symptom(conversation)
 
     # 어시스턴트 응답 추가
-    # conversation.append({"role": "assistant", "content": answer})
+    conversation.append({"role": "assistant", "content": answer})
 
     # 대화 상태 업데이트
     supabase_client.table("conversation").update({

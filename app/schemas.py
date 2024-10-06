@@ -19,6 +19,7 @@ class NutrientSchema(BaseModel):
 
 class ConversationSchema(BaseModel):
     user_id : UUID
+    nickname : str
     conversation: List[str]
 
     class Config:

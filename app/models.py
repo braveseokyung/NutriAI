@@ -20,4 +20,5 @@ class Nutrient(Base):
 class Conversation(Base):
     __tablename__="conversation"
     user_id=Column(UUID, primary_key=True, index=True)
+    nickname=Column(TEXT, unique=False, index=False)
     conversation=Column(ARRAY(JSON), unique=False, index=False)
